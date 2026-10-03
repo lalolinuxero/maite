@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>teamo viva stalin</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&family=Dancing+Script:wght@700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:linear-gradient(135deg,#fce3ec,#ffe8cc);min-height:100vh;padding:20px;display:flex;justify-content:center;align-items:flex-start;font-family:'Poppins',sans-serif;color:#444}
+.card{background:rgba(255,255,255,.9);padding:40px;border-radius:30px;box-shadow:0 20px 40px rgba(255,182,193,.4);max-width:560px;width:100%;margin:auto;text-align:center;animation:popIn .6s cubic-bezier(.68,-.55,.27,1.55)}
+@keyframes popIn{0%{transform:scale(.5);opacity:0}100%{transform:scale(1);opacity:1}}
+h1,h2{font-family:'Dancing Script',cursive;color:#ff4d6d;line-height:1.2}
+h1{font-size:3em;margin-bottom:20px}
+h2{font-size:2.2em;margin:30px 0 15px}
+.emoji{font-size:4em;margin-bottom:10px}
+input,textarea{width:100%;padding:14px 20px;border:2px solid #ffd0da;border-radius:20px;font:inherit;margin-bottom:15px;outline:none;background:#fff}
+input:focus,textarea:focus{border-color:#ff4d6d}
+textarea{min-height:140px;resize:vertical}
+button{padding:14px 36px;font-size:17px;border:none;border-radius:50px;cursor:pointer;font:600 17px 'Poppins',sans-serif;background:#ff4d6d;color:#fff;box-shadow:0 10px 20px rgba(255,77,109,.3);transition:all .3s}
+button:hover{transform:scale(1.07);background:#e63950}
+button.sec{background:#dedede;color:#333;box-shadow:none}
+button:disabled{opacity:.6;cursor:wait}
+.msg{margin-top:12px;min-height:1.4em;font-size:.95em}
+.err{color:#d62839}.ok{color:#2a9d5c}
+.item{display:block;width:100%;text-align:left;background:#fff;color:#444;border:2px solid #ffd0da;border-radius:20px;padding:14px 20px;margin-bottom:12px;box-shadow:none}
+.item:hover{background:#fff0f3;transform:scale(1.02)}
+.item small{display:block;color:#999;font-weight:400}
+.carta{text-align:left;white-space:pre-wrap;line-height:1.7;background:#fff;border-radius:20px;padding:25px;margin:15px 0 20px}
+.hide{display:none}
+@media(max-width:600px){.card{padding:25px;border-radius:20px}h1{font-size:2.2em}}
+</style>
+</head>
+<body>
+<div class="card">
+
+  <!-- 1. Clave -->
+  <div id="login">
+    <div class="emoji">💌</div>
+    <h1>Hola maite, ingresa la clave :3</h1>
+    <input type="password" id="clave" placeholder="Escribe la clave" autocomplete="off">
+    <button id="entrar">Entrar</button>
+    <div class="msg err" id="loginMsg"></div>
+  </div>
+
+  <!-- 2. Lista de cartas -->
+  <div id="lista" class="hide">
+    <h1>Mis cartas para ti</h1>
+    <div id="items"></div>
+  </div>
+
+  <!-- 3. Una carta -->
+  <div id="vista" class="hide">
+    <h1 id="vTitulo"></h1>
+    <small id="vFecha" style="color:#999"></small>
+    <div class="carta" id="vTexto"></div>
+    <button class="sec" id="volver">← Volver</button>
+  </div>
+
+  <!-- 4. Formulario de respuesta (visible tras entrar) -->
+  <div id="responder" class="hide">
+    <h2>Respóndeme 💗</h2>
+    <input type="text" id="rNombre" placeholder="Tu nombre (opcional)">
+    <textarea id="rTexto" placeholder="Escribe aquí tu respuesta..."></textarea>
+    <button id="enviar">Enviar</button>
+    <div class="msg" id="rMsg"></div>
+  </div>
+
+</div>
+
+<script>
+// ====== CONFIGURAR ESTO ======
+// Llave gratuita de https://web3forms.com 
+const WEB3FORMS_KEY = "b8d06b98-1e80-40cb-ad09-1433e47a17bc";
+// ============================
+
+const $ = id => document.getElementById(id);
+const enc = new TextEncoder(), dec = new TextDecoder();
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+async function deriveKey(pw, salt) {
+  const base = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2', salt, iterations:250000, hash:'SHA-256'},
+    base, {name:'AES-GCM', length:256}, false, ['decrypt']);
+}
+async function decrypt(pw, e) {
+  const k = await deriveKey(pw, unb64(e.s));
+  const buf = await crypto.subtle.decrypt({name:'AES-GCM', iv:unb64(e.i)}, k, unb64(e.c));
+  return JSON.parse(dec.decode(buf));
+}
+
+let cartas = [], actual = null;
+
+async function entrar() {
+  const pw = $('clave').value;
+  if (!pw) return;
+  $('entrar').disabled = true; $('loginMsg').textContent = '';
+  try {
+    const res = await fetch('cartas.json', {cache:'no-store'});
+    const data = await res.json();
+    cartas = [];
+    for (const e of data) cartas.push(await decrypt(pw, e));
+    mostrarLista();
+  } catch (err) {
+    $('loginMsg').textContent = err.name === 'OperationError' ? 'Clave incorrecta 🙈' : 'No pude cargar las cartas.';
+  }
+  $('entrar').disabled = false;
+}
+
+function mostrarLista() {
+  $('login').classList.add('hide'); $('vista').classList.add('hide');
+  $('lista').classList.remove('hide'); $('responder').classList.remove('hide');
+  const cont = $('items'); cont.innerHTML = '';
+  if (!cartas.length) { cont.textContent = 'Pronto habrá cartas aquí 💌'; return; }
+  [...cartas].reverse().forEach(c => {
+    const b = document.createElement('button');
+    b.className = 'item';
+    b.textContent = c.titulo;
+    const s = document.createElement('small'); s.textContent = c.fecha || '';
+    b.appendChild(s);
+    b.onclick = () => abrir(c);
+    cont.appendChild(b);
+  });
+}
+
+function abrir(c) {
+  actual = c;
+  $('vTitulo').textContent = c.titulo; $('vFecha').textContent = c.fecha || '';
+  $('vTexto').textContent = c.texto;
+  $('lista').classList.add('hide'); $('vista').classList.remove('hide');
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+async function enviar() {
+  const texto = $('rTexto').value.trim();
+  const m = $('rMsg');
+  if (!texto) { m.className = 'msg err'; m.textContent = 'Escribe algo primero 🙂'; return; }
+  $('enviar').disabled = true; m.className = 'msg'; m.textContent = 'Enviando...';
+  try {
+    const res = await fetch('https://api.web3forms.com/submit', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'Accept':'application/json'},
+      body: JSON.stringify({
+        access_key: WEB3FORMS_KEY,
+        subject: 'Nueva respuesta a tus cartas 💌',
+        from_name: $('rNombre').value || 'Mi corazón de melón',
+        carta: actual ? actual.titulo : '(sin carta abierta)',
+        mensaje: texto
+      })
+    });
+    const j = await res.json();
+    if (!j.success) throw new Error();
+    m.className = 'msg ok'; m.textContent = '¡Enviado! Gracias 💗';
+    $('rTexto').value = '';
+  } catch { m.className = 'msg err'; m.textContent = 'No se pudo enviar. Intenta de nuevo.'; }
+  $('enviar').disabled = false;
+}
+
+$('entrar').onclick = entrar;
+$('clave').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
+$('volver').onclick = mostrarLista;
+$('enviar').onclick = enviar;
+</script>
+</body>
+</html>
